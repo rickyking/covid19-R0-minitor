@@ -1,0 +1,238 @@
+---
+title: "COVID-19 Canada"
+runtime: shiny
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup}
+library(tidyverse)
+library(lubridate)
+library(incidence)
+knitr::opts_chunk$set(warning=FALSE)
+# Sys.unsetenv("http_proxy")
+# Sys.unsetenv("https_proxy")
+```
+
+
+## Covid 19 Epidemionlogy with R
+
+Rf.: 
+
+- the following analysis is based on this [post](https://rviews.rstudio.com/2020/03/05/covid-19-epidemiology-with-r/)
+- You can find [Modelling the effects of public health interventions on COVID-19 transmission using R - part 1](https://timchurches.github.io/blog/posts/2020-03-10-modelling-the-effects-of-public-health-interventions-on-covid-19-transmission-part-1/) in details
+- also the [R Epidemics Consortium](https://www.repidemicsconsortium.org/projects/) will provide you the tool
+
+### Getting data
+
+We are now getting data from JHU data gathered since beginning of the COVID-19. The address below contains the data live. We are going to subset it to Canada.
+
+```{r}
+jhu_url <- paste("https://raw.githubusercontent.com/CSSEGISandData/", 
+  "COVID-19/master/csse_covid_19_data/", "csse_covid_19_time_series/", 
+  "time_series_covid19_confirmed_global.csv", sep = "")
+jhu_url
+```
+
+```{r}
+ca_confirmed_long_jhu <- read_csv(jhu_url) %>% 
+  rename(province = "Province/State", 
+  country_region = "Country/Region") %>% 
+  pivot_longer(-c(province, country_region, Lat, Long), 
+               names_to = "Date", 
+               values_to = "cumulative_cases") %>% 
+  # adjust JHU dates back one day to reflect US time, more or less
+  mutate(Date = mdy(Date) - days(1)) %>% 
+  filter(country_region == "Canada") %>% 
+  arrange(province, Date) %>% 
+  group_by(province) %>% 
+  mutate(
+    incident_cases = c(0, diff(cumulative_cases))
+    ) %>% 
+  ungroup() %>% 
+  select(-country_region, -Lat, -Long) %>% 
+  filter(str_detect(province, "Diamond Princess", negate = TRUE))
+
+ca_confirmed_long_jhu
+```
+
+Plot the cumulative incidence increase per province:
+
+```{r}
+ca_confirmed_long_jhu %>%
+  ggplot(aes(x=Date, y=cumulative_cases, color=province)) +
+  geom_line() 
+```
+
+### Calculate at country level
+
+So calculate the cumulative and incident cases at group level:
+
+
+```{r}
+ca_confirmed <- ca_confirmed_long_jhu %>%
+  group_by(Date) %>%
+  summarise(
+    cumulative_cases = sum(cumulative_cases),
+    incident_cases = sum(incident_cases)
+  )
+
+ca_confirmed %>%
+  ggplot(aes(x=Date, y=cumulative_cases)) +
+  geom_line() 
+
+require(scales)
+ca_confirmed %>%
+  ggplot(aes(x=Date, y=cumulative_cases)) +
+  geom_line()  +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+              labels = trans_format("log10", math_format(10^.x))) +
+  annotation_logticks()  
+```
+
+### A quick fit exponential models to incidence data
+
+```{r}
+ca_confirmed %>%
+  filter(Date >= as_date("2020-02-27")) %>%
+  select(Date, incident_cases) %>%
+  uncount(incident_cases) -> ca_incidence
+
+ca_incidence_object <- incidence(ca_incidence$Date, last_date = max(ca_incidence$Date))
+ca_incidence_object
+ca_incidence_fit <- incidence::fit(ca_incidence_object, quiet = FALSE)
+ca_incidence_fit$info$pred
+```
+
+
+
+```{r}
+plot(ca_incidence_object) %>% 
+  add_incidence_fit(ca_incidence_fit)
+```
+
+### Estimate R0 
+
+
+```{r}
+library(earlyR)
+library(epitrix)
+mu <- 7.5  # days
+sigma <- 3.4  # days
+param <- epitrix::gamma_mucv2shapescale(mu, sigma/mu)
+
+w <- distcrete::distcrete("gamma", interval = 1, shape = param$shape, scale = param$scale, 
+    w = 0)
+w
+R <- get_R(ca_incidence_object, si = w, si_mean=mu, si_sd=sigma)
+get_R(ca_incidence_object, si_mean=mu, si_sd=sigma)
+R
+
+growth_R0 <- lm2R0_sample(ca_incidence_fit$model, w) 
+
+growth_R0 %>% summary()
+growth_R0 %>% hist(col = "grey", border = "white", main = "Distribution of R0")
+```
+
+```{r}
+plot(R)
+```
+
+```{r}
+plot(R, "lambdas")
+```
+
+### Project the future
+
+
+```{r}
+library(projections)
+
+pred_fwd_days <- 7
+
+pred_growth <- project(ca_incidence_object, R = median(growth_R0), si=w, n_sim=10000, n_days = pred_fwd_days)
+
+plot(ca_incidence_object) %>%
+  add_projections(pred_growth) %>% 
+  add_incidence_fit(ca_incidence_fit) +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  ggtitle('Incidence per day with projection')
+
+
+
+pred_cum <- cumulate(pred_growth) # cumulative predictions
+
+plot(cumulate(ca_incidence_object)) %>%
+  add_projections(pred_cum+ca_incidence_object$n) +
+  ggtitle('Cumulative incidence projection')+
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+
+
+plot(pred_cum+ca_incidence_object$n) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_date(breaks = scales::pretty_breaks(n = 20))
+```
+
+### Estimate Time Varying Reproduction Numbers from Epidemic Curves
+
+The mean and std is from WHO estimation of serial interval.
+
+```{r fig.height=10}
+library(EpiEstim)
+
+days <- seq_along(ca_incidence_object$dates)
+
+mu <- 7.5  # days
+sigma <- 3.4  # days
+
+Rt <- estimate_R(ca_incidence_object, 
+                 method = "parametric_si",
+                  config = make_config(list(
+                  mean_si = mu, std_si = sigma)))
+
+# custom results plotting function to avoid the ugly
+# TableGrob messages returned by the plotting function in the
+# EpiEstim package
+plot_Ri <- function(estimate_R_obj) {
+    p_I <- plot(estimate_R_obj, "incid", add_imported_cases = TRUE)  # plots the incidence
+    p_SI <- plot(estimate_R_obj, "SI")  # plots the serial interval distribution
+    p_Ri <- plot(estimate_R_obj, "R")
+    return(gridExtra::grid.arrange(p_I, p_SI, p_Ri, ncol = 1))
+}
+
+plot_Ri(Rt)
+
+```
+
+We now put serial interval to be uncertain and simulate the results.
+
+```{r fig.height=10}
+ca_res_uncertain_si <- estimate_R(ca_incidence_object, method = "uncertain_si", 
+    config = make_config(list(mean_si = 7.5, std_mean_si = 2, 
+        min_mean_si = 1, max_mean_si = 8.4, std_si = 3.4, std_std_si = 1, 
+        min_std_si = 0.5, max_std_si = 4, n1 = 100, n2 = 100)))
+
+plot_Ri(ca_res_uncertain_si)
+
+
+```
+
+We estimate the R0 at daily level.
+
+```{r fig.height=10}
+t_start <- seq(2, length(ca_incidence_object$dates)-1)
+t_end <- t_start + 1
+
+
+empirical_si_config_daily <-  make_config(list(mean_si = 7.5, std_mean_si = 2, 
+        min_mean_si = 1, max_mean_si = 8.4, std_si = 3.4, std_std_si = 1, 
+        min_std_si = 0.5, max_std_si = 4, n1 = 100, n2 = 100, t_start = t_start, t_end = t_end))
+
+ca_res_uncertain_si_daily <- estimate_R(ca_incidence_object, 
+    method = "uncertain_si", config = empirical_si_config_daily)
+
+
+plot_Ri(ca_res_uncertain_si_daily)
+```
+
