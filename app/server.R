@@ -39,6 +39,25 @@ function(session, input, output) {
     )
   })
   
+  output$vb_cases_pop <- renderValueBox({
+    validate(need(input$which_country, 'select a country...'))
+    
+    value <- country_jhu %>%
+      filter(country_region == input$which_country) %>%
+      slice(n()) %>%
+      pull(infection_pct)
+    last_value <- country_jhu %>%
+      filter(country_region == input$which_country) %>%
+      slice(n()-1) %>%
+      pull(infection_pct)
+    
+    valueBox(
+      paste0(round(value * 1000, 2), '‰'),
+      HTML("‰ infected of total population", '\U25B2', round((value - last_value)*1000, 2), '‰'),
+      icon = icon(""), color = 'red'
+    )
+  })
+  
   output$vb_double_in_xday <- renderValueBox({
     value <- incidence_rec()$incidence_fit$info$doubling
     valueBox(

@@ -14,8 +14,9 @@ dashboardPage(skin='red',
         ),
         numericInput('si_mu', 'Serial Inverval Mu:', value = 7.5, min = 1),
         numericInput('si_sd', 'Serial interval Sd:', value = 3.4, min = 0),
-        div(align='center', 'By ', a("Yi, Jin", href="https://jinyi.me/")
-            )
+        div(align='center', 'By ', a("Yi, Jin", href="https://jinyi.me/")),
+        div(align='center', 'Source code: ', a("Github", href="https://github.com/rickyking/covid19-R0-minitor")),
+        div(align="center", 'Data: ',a('Johns Hopkins University', href='https://github.com/CSSEGISandData/COVID-19'))
       ))
     )
   ),
@@ -24,10 +25,11 @@ dashboardPage(skin='red',
 
       # First tab content
               fluidRow(
-                valueBoxOutput('vb_total_cases', width = 3),
-                valueBoxOutput('vb_double_in_xday', width = 3),
-                valueBoxOutput('vb_est_r0', width = 3),
-                valueBoxOutput('vb_r0_7d', width = 3)
+                valueBoxOutput('vb_total_cases', width = 2),
+                valueBoxOutput('vb_cases_pop', width = 2),
+                valueBoxOutput('vb_double_in_xday', width = 2),
+                valueBoxOutput('vb_est_r0', width = 2),
+                valueBoxOutput('vb_r0_7d', width = 2)
                 
               ),
               fluidRow(

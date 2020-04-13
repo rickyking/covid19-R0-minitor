@@ -17,6 +17,13 @@ jhu_url <- paste("https://raw.githubusercontent.com/CSSEGISandData/",
                  "COVID-19/master/csse_covid_19_data/", "csse_covid_19_time_series/", 
                  "time_series_covid19_confirmed_global.csv", sep = "")
 
+jhu_pop <- paste("https://raw.githubusercontent.com/CSSEGISandData/", 
+                 "COVID-19/master/csse_covid_19_data/", 
+                 "UID_ISO_FIPS_LookUp_Table.csv", sep = "")
+
+country_pop <- read_csv(jhu_pop) %>%
+  select(Combined_Key, Population)
+
 confirmed_long_jhu <- read_csv(jhu_url) %>% 
   rename(province = "Province/State", 
          country_region = "Country/Region") %>% 
@@ -34,6 +41,18 @@ confirmed_long_jhu <- read_csv(jhu_url) %>%
   replace_na(list(province='N/A')) %>%
   filter(!str_detect(province, "Recovered"))
 
+country_jhu <- confirmed_long_jhu %>%
+  group_by(country_region, Date) %>%
+  summarise(
+    cumulative_cases = sum(cumulative_cases),
+    incident_cases = sum(incident_cases)
+  ) %>%
+  left_join(country_pop, by=c('country_region' = 'Combined_Key')) %>%
+  mutate(infection_pct = cumulative_cases / Population) %>%
+  ungroup()
+
+country_jhu %>%
+  filter(country_region == 'Canada') %>% tail()
 
 # custom results plotting function to avoid the ugly
 # TableGrob messages returned by the plotting function in the
