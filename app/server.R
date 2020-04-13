@@ -52,8 +52,8 @@ function(session, input, output) {
       pull(infection_pct)
     
     valueBox(
-      paste0(round(value * 1000, 2), '‰'),
-      HTML("‰ infected of total population", '\U25B2', round((value - last_value)*1000, 2), '‰'),
+      paste0(round(value * 10000, 2)),
+      HTML("# per 10k population: ", '\U25B2', round((value - last_value)*1000, 2)),
       icon = icon(""), color = 'red'
     )
   })

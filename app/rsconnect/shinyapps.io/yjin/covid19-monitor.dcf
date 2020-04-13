@@ -5,8 +5,8 @@ account: yjin
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2055225
-bundleId: 2977856
+bundleId: 3005235
 url: https://yjin.shinyapps.io/covid19-monitor/
-when: 1586209748.42455
+when: 1586749843.26183
 asMultiple: FALSE
 asStatic: FALSE
